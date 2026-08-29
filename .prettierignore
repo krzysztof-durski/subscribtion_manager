@@ -1,0 +1,7 @@
+node_modules
+build
+.react-router
+coverage
+drizzle/migrations
+package-lock.json
+worker-configuration.d.ts
