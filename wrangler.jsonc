@@ -1,0 +1,37 @@
+/**
+ * Wrangler configuration. Reference:
+ * https://developers.cloudflare.com/workers/wrangler/configuration/
+ */
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "subscription-manager",
+  // Personal account ("Dursky.k@gmail.com's Account"); pins every wrangler
+  // command here so nothing lands on the other accounts this login can see.
+  "account_id": "7cad87ef12fc76890762b62381acd4cd",
+  "compatibility_date": "2026-08-25",
+  "main": "./workers/app.ts",
+  "observability": {
+    "enabled": true,
+  },
+  "upload_source_maps": true,
+
+  // Served only from the custom domain. The bare *.workers.dev URL and per-version
+  // preview URLs are disabled.
+  "workers_dev": false,
+  "preview_urls": false,
+  "routes": [{ "pattern": "subscribtion-manager.codepapa.xyz", "custom_domain": true }],
+
+  // D1 (SQLite) database — created 2026-08-29 in region EEUR.
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "subscription-manager",
+      "database_id": "74983ffe-107a-4fdd-9f44-ef22eb930909",
+      "migrations_dir": "drizzle/migrations",
+    },
+  ],
+
+  // Auth is Cloudflare Access (Zero Trust), configured in the dashboard as a
+  // self-hosted application over the route above. The app only reads the
+  // `Cf-Access-Authenticated-User-Email` header Access adds; no code config here.
+}
