@@ -49,6 +49,7 @@ the clock, e.g. `http://localhost:5173/?today=2026-08-15`.
 | `npm run lint` / `npm run format`      | ESLint / Prettier                                        |
 | `npm run check`                        | typecheck + lint + format check + coverage (the CI gate) |
 | `npm run db:migrate:local` / `:remote` | Apply migrations to local / production D1                |
+| `npm run db:pull`                      | Replace local D1 with an exact copy of production        |
 | `npm run db:studio`                    | Drizzle Studio against the schema                        |
 | `npm run deploy`                       | Build and deploy the Worker                              |
 

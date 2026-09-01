@@ -22,6 +22,7 @@
     "db:generate": "drizzle-kit generate",
     "db:migrate:local": "wrangler d1 migrations apply subscription-manager --local",
     "db:migrate:remote": "wrangler d1 migrations apply subscription-manager --remote",
+    "db:pull": "node scripts/db-pull.mjs",
     "db:studio": "drizzle-kit studio",
     "check": "npm run typecheck && npm run lint && npm run format:check && npm run test && npm run coverage"
   },

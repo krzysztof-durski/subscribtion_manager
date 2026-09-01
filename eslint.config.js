@@ -14,6 +14,7 @@ export default tseslint.config(
       "node_modules/",
       "worker-configuration.d.ts",
       "*.config.{js,ts,mts}",
+      "scripts/**",
     ],
   },
   js.configs.recommended,
