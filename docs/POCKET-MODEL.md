@@ -19,11 +19,13 @@ EUR/month subscription contributes 9.99. When a charge lands, that
 subscription's set-aside money leaves the pocket.
 
 Therefore the amount that _should_ be sitting in the pocket for one subscription
-is what has accumulated since its **last charge**:
+is what has accumulated since its **last charge** — where a charge dated **today**
+counts as still upcoming (it may not have cleared yet), so the money for it should
+still be in the pocket:
 
 ```
 contribution = min(
-  monthlyEquivalent × (refills strictly after the last charge, up to and including today),
+  monthlyEquivalent × (refills strictly after the last charge before today, up to and including today),
   amountPerCharge          // never hold more than one full charge
 )
 ```
@@ -37,6 +39,17 @@ have started one interval before it (`firstBillingDate − intervalMonths`) — 
 the model assumes you have been saving toward that first charge. For a brand-new
 subscription you have _not_ been saving for, set its first billing date to the
 upcoming charge.
+
+## Marking a charge paid
+
+The date rule can only guess. When a charge has actually gone through — it
+cleared early, or the billing date shifted — hit **"mark paid"** next to it in
+the dashboard's "Charges before the next refill" list. That records the
+`(subscription, scheduled date)` in `charge_payments`, and the accumulation
+window jumps forward to that charge: the subscription's set-aside drops to zero
+straight away instead of waiting for the calendar. **"undo"** removes the record.
+Only the imminent (today-or-later) occurrence is affected; stale records do
+nothing and can be left alone.
 
 ## Worked example
 

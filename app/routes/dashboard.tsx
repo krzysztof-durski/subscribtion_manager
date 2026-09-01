@@ -1,6 +1,6 @@
-import { Link } from "react-router";
+import { data, Form, Link } from "react-router";
 
-import { appDb, getAppData } from "~/db";
+import { appDb, getAppData, markChargePaid, unmarkChargePaid } from "~/db";
 import { buildDashboard } from "~/lib/dashboard";
 import { isValidISODate, todayISOInTimeZone } from "~/lib/dates";
 import { formatMinorByCode } from "~/lib/money";
@@ -13,24 +13,44 @@ export function meta(): Route.MetaDescriptors {
 }
 
 export async function loader({ request }: Route.LoaderArgs) {
-  const data = await getAppData(appDb());
+  const appData = await getAppData(appDb());
 
   const override = new URL(request.url).searchParams.get("today");
   const usingOverride = override != null && isValidISODate(override);
-  const todayISO = usingOverride ? override : todayISOInTimeZone(data.settings.timezone);
+  const todayISO = usingOverride ? override : todayISOInTimeZone(appData.settings.timezone);
 
   return {
     dashboard: buildDashboard(
-      data.pockets,
-      data.subscriptions,
-      data.currencies,
-      data.settings,
+      appData.pockets,
+      appData.subscriptions,
+      appData.currencies,
+      appData.settings,
       todayISO,
+      appData.paidCharges,
     ),
-    currencies: data.currencies,
+    currencies: appData.currencies,
     usingOverride,
-    hasPockets: data.pockets.length > 0,
+    hasPockets: appData.pockets.length > 0,
   };
+}
+
+export async function action({ request }: Route.ActionArgs) {
+  const form = await request.formData();
+  const intent = form.get("intent");
+  const subscriptionId = Number(form.get("subscriptionId"));
+  const dueDate = String(form.get("dueDate"));
+
+  if (!Number.isInteger(subscriptionId) || !isValidISODate(dueDate)) {
+    return data({ error: "Invalid charge reference" }, { status: 400 });
+  }
+
+  const db = appDb();
+  if (intent === "markPaid") {
+    await markChargePaid(db, subscriptionId, dueDate);
+  } else if (intent === "unmarkPaid") {
+    await unmarkChargePaid(db, subscriptionId, dueDate);
+  }
+  return { ok: true };
 }
 
 export default function Dashboard({ loaderData }: Route.ComponentProps) {
@@ -122,18 +142,40 @@ export default function Dashboard({ loaderData }: Route.ComponentProps) {
                             <th className="py-1">Date</th>
                             <th className="py-1">Subscription</th>
                             <th className="py-1 text-right">Amount</th>
+                            <th className="py-1" />
                           </tr>
                         }
                       >
-                        {upcoming.map((charge, i) => (
-                          <tr key={`${charge.subscription.id}-${charge.date}-${i}`}>
-                            <td className="py-1 tabular-nums">{charge.date}</td>
-                            <td className="py-1">{charge.subscription.name}</td>
-                            <td className="py-1 text-right tabular-nums">
-                              {money(charge.amountMinor, code)}
-                            </td>
-                          </tr>
-                        ))}
+                        {upcoming.map((charge, i) => {
+                          const struck = charge.paid ? "text-gray-400 line-through" : "";
+                          return (
+                            <tr key={`${charge.subscription.id}-${charge.date}-${i}`}>
+                              <td className={`py-1 tabular-nums ${struck}`}>{charge.date}</td>
+                              <td className={`py-1 ${struck}`}>{charge.subscription.name}</td>
+                              <td className={`py-1 text-right tabular-nums ${struck}`}>
+                                {money(charge.amountMinor, code)}
+                              </td>
+                              <td className="py-1 text-right">
+                                <Form method="post" action="/?index" className="inline">
+                                  <input
+                                    type="hidden"
+                                    name="subscriptionId"
+                                    value={charge.subscription.id}
+                                  />
+                                  <input type="hidden" name="dueDate" value={charge.date} />
+                                  <input
+                                    type="hidden"
+                                    name="intent"
+                                    value={charge.paid ? "unmarkPaid" : "markPaid"}
+                                  />
+                                  <button className="text-xs text-blue-600 underline" type="submit">
+                                    {charge.paid ? "undo" : "mark paid"}
+                                  </button>
+                                </Form>
+                              </td>
+                            </tr>
+                          );
+                        })}
                       </Table>
                     </div>
                   ) : null}

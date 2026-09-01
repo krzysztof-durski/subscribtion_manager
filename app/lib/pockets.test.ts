@@ -89,13 +89,32 @@ describe("subscriptionContributionMinor", () => {
   it("accrues a yearly charge one refill at a time and caps at the full amount", () => {
     expect(subscriptionContributionMinor(C, 10, "2026-08-15")).toBe(11000); // 11 refills x 10.00
     expect(subscriptionContributionMinor(C, 10, "2026-09-10")).toBe(12000); // 12th refill -> full
-    expect(subscriptionContributionMinor(C, 10, "2026-09-16")).toBe(0); // charged, pot reset
+    expect(subscriptionContributionMinor(C, 10, "2026-09-15")).toBe(12000); // charge day: still held
+    expect(subscriptionContributionMinor(C, 10, "2026-09-16")).toBe(0); // day after: pot reset
+  });
+
+  it("still holds the money on the charge day itself (charge treated as upcoming)", () => {
+    expect(subscriptionContributionMinor(A, 10, "2026-09-01")).toBe(1000); // A bills on the 1st
+    expect(subscriptionContributionMinor(A, 10, "2026-09-02")).toBe(0); // spent the day after
   });
 
   it("assumes saving started a full cycle before a not-yet-charged subscription", () => {
     const future: Subscription = { ...C, id: 9, firstBillingDate: "2026-12-15" };
     // accumulation from 2025-12-15; 8 refills (Jan–Aug 2026) by 15 Aug.
     expect(subscriptionContributionMinor(future, 10, "2026-08-15")).toBe(8000);
+  });
+
+  it("drops to zero when the imminent charge is marked paid", () => {
+    // A bills on the 1st; on 1 Sep it would normally still be held (€10.00)…
+    expect(subscriptionContributionMinor(A, 10, "2026-09-01")).toBe(1000);
+    // …unless that occurrence is marked settled.
+    expect(subscriptionContributionMinor(A, 10, "2026-09-01", new Set(["2026-09-01"]))).toBe(0);
+    // works ahead of the date too (charge cleared early)
+    expect(subscriptionContributionMinor(A, 10, "2026-08-31", new Set(["2026-09-01"]))).toBe(0);
+  });
+
+  it("ignores a paid mark that is not the imminent occurrence", () => {
+    expect(subscriptionContributionMinor(A, 10, "2026-09-01", new Set(["2026-07-01"]))).toBe(1000);
   });
 });
 
@@ -131,6 +150,14 @@ describe("pocketBalance — canonical scenario", () => {
     expect(result.expectedBalanceMinor).toBe(14000);
     expect(result.lines).toHaveLength(3);
   });
+
+  it("subtracts a subscription whose imminent charge is marked paid", () => {
+    // 15 Sep, C's renewal day: normally C holds 120.00 -> pocket 150.00.
+    const paid = new Map([[C.id, new Set(["2026-09-15"])]]);
+    const result = pocketBalance(eurPocket, [A, B, C], settings, "2026-09-15", paid);
+    expect(result.lines.find((l) => l.subscription.id === C.id)?.contributionMinor).toBe(0);
+    expect(result.expectedBalanceMinor).toBe(3000); // A 10 + B 20 + C 0
+  });
 });
 
 describe("upcomingCharges", () => {
@@ -154,5 +181,15 @@ describe("upcomingCharges", () => {
       "2026-09-01",
     );
     expect(charges.map((c) => c.date)).toEqual(["2026-08-30"]);
+  });
+
+  it("flags each charge with its paid status", () => {
+    const paid = new Map([[A.id, new Set(["2026-09-01"])]]);
+    const charges = upcomingCharges(eurPocket, [A, B], "2026-08-15", "2026-10-01", paid);
+    expect(charges.map((c) => [c.subscription.name, c.date, c.paid])).toEqual([
+      ["B", "2026-08-30", false],
+      ["A", "2026-09-01", true],
+      ["B", "2026-09-30", false],
+    ]);
   });
 });

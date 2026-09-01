@@ -13,14 +13,21 @@
  * to "about one charge's worth"; the model only diverges from just-in-time
  * funding for quarterly / yearly subscriptions.
  *
- * See `docs/POCKET-MODEL.md` for the worked example this implements.
+ * The "last charge" is the most recent occurrence *before today*, unless the
+ * user has manually marked the imminent (today-or-later) occurrence as paid — in
+ * which case that one counts as settled. See `docs/POCKET-MODEL.md`.
  */
 
 import { addMonths, compareISODate, type ISODate } from "./dates";
 import { monthlyEquivalentMinor } from "./money";
 import { refillCount } from "./refill";
-import { billingOccurrencesBetween, lastBillingOnOrBefore } from "./schedule";
+import { billingOccurrencesBetween, lastBillingBefore, nextBillingOnOrAfter } from "./schedule";
 import type { Pocket, Settings, Subscription } from "./types";
+
+/** For each subscription id, the scheduled charge dates the user marked settled. */
+export type PaidCharges = ReadonlyMap<number, ReadonlySet<ISODate>>;
+
+const NO_PAID_CHARGES: PaidCharges = new Map();
 
 /** The refill day that applies to a pocket (its own, or the global default). */
 export function effectiveRefillDay(pocket: Pocket, settings: Settings): number {
@@ -30,20 +37,24 @@ export function effectiveRefillDay(pocket: Pocket, settings: Settings): number {
 /**
  * How much of `sub`'s cost should currently be set aside in its pocket.
  *
- * The accumulation window starts at the subscription's most recent charge on or
- * before `todayISO`. If it has never charged, it starts one interval before the
- * first charge — i.e. the model assumes you have been saving toward that first
- * charge since a full cycle earlier.
+ * The accumulation window starts at the subscription's most recent charge
+ * *before* `todayISO` (a charge dated today is still upcoming, so its money
+ * should still be in the pocket) — or, if the next charge on/after today has
+ * been marked paid, at that charge. If it has never charged, the window starts
+ * one interval before the first charge.
  */
 export function subscriptionContributionMinor(
   sub: Subscription,
   refillDay: number,
   todayISO: ISODate,
+  paidDates: ReadonlySet<ISODate> = new Set(),
 ): number {
   if (!sub.active) return 0;
 
-  const lastCharge = lastBillingOnOrBefore(sub, todayISO);
-  const accumulationStart = lastCharge ?? addMonths(sub.firstBillingDate, -sub.intervalMonths);
+  const naturalStart =
+    lastBillingBefore(sub, todayISO) ?? addMonths(sub.firstBillingDate, -sub.intervalMonths);
+  const imminent = nextBillingOnOrAfter(sub, todayISO);
+  const accumulationStart = imminent && paidDates.has(imminent) ? imminent : naturalStart;
 
   const refills = refillCount(refillDay, accumulationStart, todayISO);
   const perMonth = monthlyEquivalentMinor(sub.amountMinor, sub.intervalMonths);
@@ -71,13 +82,19 @@ export function pocketBalance(
   subs: readonly Subscription[],
   settings: Settings,
   todayISO: ISODate,
+  paidCharges: PaidCharges = NO_PAID_CHARGES,
 ): PocketBalance {
   const refillDay = effectiveRefillDay(pocket, settings);
   const pocketSubs = subs.filter((s) => s.pocketId === pocket.id && s.active);
 
   const lines: PocketBalanceLine[] = pocketSubs.map((subscription) => ({
     subscription,
-    contributionMinor: subscriptionContributionMinor(subscription, refillDay, todayISO),
+    contributionMinor: subscriptionContributionMinor(
+      subscription,
+      refillDay,
+      todayISO,
+      paidCharges.get(subscription.id),
+    ),
   }));
 
   return {
@@ -96,6 +113,8 @@ export interface UpcomingCharge {
   subscription: Subscription;
   date: ISODate;
   amountMinor: number;
+  /** True when the user has marked this scheduled charge as settled. */
+  paid: boolean;
 }
 
 /**
@@ -107,12 +126,19 @@ export function upcomingCharges(
   subs: readonly Subscription[],
   todayISO: ISODate,
   horizonISO: ISODate,
+  paidCharges: PaidCharges = NO_PAID_CHARGES,
 ): UpcomingCharge[] {
   const charges: UpcomingCharge[] = [];
   for (const subscription of subs) {
     if (!subscription.active || subscription.pocketId !== pocket.id) continue;
+    const paidDates = paidCharges.get(subscription.id);
     for (const date of billingOccurrencesBetween(subscription, todayISO, horizonISO)) {
-      charges.push({ subscription, date, amountMinor: subscription.amountMinor });
+      charges.push({
+        subscription,
+        date,
+        amountMinor: subscription.amountMinor,
+        paid: paidDates?.has(date) ?? false,
+      });
     }
   }
   return charges.sort((a, b) => compareISODate(a.date, b.date));

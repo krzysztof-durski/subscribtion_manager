@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 
-import { billingOccurrencesBetween, lastBillingOnOrBefore, nextBillingAfter } from "./schedule";
+import {
+  billingOccurrencesBetween,
+  lastBillingBefore,
+  nextBillingAfter,
+  nextBillingOnOrAfter,
+} from "./schedule";
 import type { Subscription } from "./types";
 
 function sub(overrides: Partial<Subscription> = {}): Subscription {
@@ -78,25 +83,27 @@ describe("billingOccurrencesBetween", () => {
   });
 });
 
-describe("lastBillingOnOrBefore", () => {
-  it("returns the most recent charge, inclusive of the exact day", () => {
-    expect(lastBillingOnOrBefore(sub(), "2026-05-20")).toBe("2026-05-12");
-    expect(lastBillingOnOrBefore(sub(), "2026-05-12")).toBe("2026-05-12");
+describe("lastBillingBefore", () => {
+  it("returns the most recent charge strictly before the date", () => {
+    expect(lastBillingBefore(sub(), "2026-05-20")).toBe("2026-05-12");
+    // a charge dated exactly on the date is still upcoming
+    expect(lastBillingBefore(sub(), "2026-05-12")).toBe("2026-04-12");
   });
 
-  it("returns null before the first charge", () => {
-    expect(lastBillingOnOrBefore(sub({ firstBillingDate: "2026-06-12" }), "2026-05-01")).toBeNull();
+  it("returns null before, or on, the first charge", () => {
+    expect(lastBillingBefore(sub({ firstBillingDate: "2026-06-12" }), "2026-05-01")).toBeNull();
+    expect(lastBillingBefore(sub({ firstBillingDate: "2026-06-12" }), "2026-06-12")).toBeNull();
   });
 
   it("returns null when the anchor has passed but the first real charge day has not", () => {
     // anchor on the 10th, but bills on the 25th: no charge yet on the 20th.
     const s = sub({ firstBillingDate: "2026-01-10", billingDay: 25 });
-    expect(lastBillingOnOrBefore(s, "2026-01-20")).toBeNull();
+    expect(lastBillingBefore(s, "2026-01-20")).toBeNull();
   });
 
   it("looks back a full year for an annual subscription", () => {
     const yearly = sub({ firstBillingDate: "2025-09-15", billingDay: 15, intervalMonths: 12 });
-    expect(lastBillingOnOrBefore(yearly, "2026-08-15")).toBe("2025-09-15");
+    expect(lastBillingBefore(yearly, "2026-08-15")).toBe("2025-09-15");
   });
 });
 
@@ -114,5 +121,19 @@ describe("nextBillingAfter", () => {
 
   it("returns null once the subscription has ended", () => {
     expect(nextBillingAfter(sub({ endDate: "2026-06-12" }), "2026-06-12")).toBeNull();
+  });
+});
+
+describe("nextBillingOnOrAfter", () => {
+  it("includes a charge dated exactly on the date", () => {
+    expect(nextBillingOnOrAfter(sub(), "2026-05-12")).toBe("2026-05-12");
+    expect(nextBillingOnOrAfter(sub(), "2026-05-13")).toBe("2026-06-12");
+  });
+
+  it("returns the anchor when the date precedes it, null when ended", () => {
+    expect(nextBillingOnOrAfter(sub({ firstBillingDate: "2026-06-12" }), "2026-01-01")).toBe(
+      "2026-06-12",
+    );
+    expect(nextBillingOnOrAfter(sub({ endDate: "2026-06-12" }), "2026-06-12")).toBeNull();
   });
 });

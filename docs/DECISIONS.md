@@ -75,6 +75,25 @@ by `0002_align_billing_day.sql`). The column stays for query convenience.
 `schedule.ts` still tolerates a mismatched `billing_day` (direct DB edits) but
 the app never produces one.
 
+## A charge dated today is "still upcoming"; a manual override wins
+
+**Context.** The sinking-fund calc needs to know whether a subscription's charge
+has happened. The calendar can only guess, and real charge dates drift by a day
+or two. Originally "last charge on or before today" — so on the charge day the
+money vanished from the expected balance while the "upcoming" list still showed
+it (contradiction), and an early/late charge was always wrong.
+
+**Decision.** The date rule is now "last charge strictly _before_ today" — a
+charge dated today is treated as still upcoming, so its money stays in the
+pocket. On top of that, the user can mark a specific `(subscription, date)`
+occurrence settled (`charge_payments`); the accumulation window then jumps to
+that charge regardless of the calendar. Only the imminent occurrence is checked.
+
+**Consequences.** The "set aside" figure and the "upcoming" list always agree.
+Erring toward "not yet charged" is the safe direction for a pocket-target tool.
+`charge_payments` rows are tiny and self-obsolete (once the date is naturally
+past, the record changes nothing) — not pruned.
+
 ## Date-only schedule math
 
 **Context.** Billing and refill schedules are "day of month, every N months".

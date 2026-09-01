@@ -7,10 +7,13 @@ import {
   createSubscription,
   deleteSubscription,
   getAppData,
+  getChargePayments,
   getCurrencies,
   getPockets,
   getSettings,
   getSubscriptions,
+  markChargePaid,
+  unmarkChargePaid,
   updateSettings,
   upsertCurrency,
 } from "~/db/queries";
@@ -20,6 +23,7 @@ const db = getDb(env.DB);
 
 /** Reset user data between tests; the seed rows from migrations stay. */
 beforeEach(async () => {
+  await env.DB.exec("DELETE FROM charge_payments");
   await env.DB.exec("DELETE FROM subscriptions");
   await env.DB.exec("DELETE FROM pockets");
   await env.DB.exec(
@@ -90,6 +94,38 @@ describe("settings + currency writes", () => {
     const currencies = await getCurrencies(db);
     expect(currencies.find((c) => c.code === "EUR")?.rateToBase).toBe(4.5);
     expect(currencies.find((c) => c.code === "GBP")?.rateToBase).toBe(5.2);
+  });
+});
+
+describe("charge payments", () => {
+  it("marks, lists, and unmarks a settled charge; cascades on subscription delete", async () => {
+    await createPocket(db, { name: "EUR", currencyCode: "EUR", refillDay: null });
+    const [pocket] = await getPockets(db);
+    await createSubscription(db, {
+      name: "Feather",
+      amountMinor: 1243,
+      currencyCode: "EUR",
+      pocketId: pocket!.id,
+      intervalMonths: 1,
+      firstBillingDate: "2026-08-01",
+      billingDay: 1,
+      endDate: null,
+      active: true,
+      notes: null,
+    });
+    const [sub] = await getSubscriptions(db);
+
+    await markChargePaid(db, sub!.id, "2026-09-01");
+    await markChargePaid(db, sub!.id, "2026-09-01"); // idempotent
+    expect((await getChargePayments(db)).get(sub!.id)).toEqual(new Set(["2026-09-01"]));
+    expect((await getAppData(db)).paidCharges.get(sub!.id)?.has("2026-09-01")).toBe(true);
+
+    await unmarkChargePaid(db, sub!.id, "2026-09-01");
+    expect((await getChargePayments(db)).size).toBe(0);
+
+    await markChargePaid(db, sub!.id, "2026-10-01");
+    await deleteSubscription(db, sub!.id);
+    expect((await getChargePayments(db)).size).toBe(0); // ON DELETE CASCADE
   });
 });
 

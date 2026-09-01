@@ -13,6 +13,7 @@ import {
   effectiveRefillDay,
   pocketBalance,
   upcomingCharges,
+  type PaidCharges,
   type PocketBalance,
   type UpcomingCharge,
 } from "./pockets";
@@ -42,6 +43,7 @@ export function buildDashboard(
   currencies: readonly Currency[],
   settings: Settings,
   todayISO: ISODate,
+  paidCharges: PaidCharges = new Map(),
 ): Dashboard {
   const currencyOf = (code: string) => {
     const found = currencies.find((c) => c.code === code);
@@ -50,13 +52,19 @@ export function buildDashboard(
   };
 
   const pocketViews: PocketDashboard[] = pockets.map((pocket) => {
-    const balance = pocketBalance(pocket, subscriptions, settings, todayISO);
+    const balance = pocketBalance(pocket, subscriptions, settings, todayISO, paidCharges);
     const nextRefillDate = nextRefillAfter(effectiveRefillDay(pocket, settings), todayISO);
     return {
       balance,
       nextRefillDate,
       // Window: [today, nextRefill] — what will drain the pocket before you top it up.
-      upcoming: upcomingCharges(pocket, subscriptions, todayISO, addDays(nextRefillDate, 1)),
+      upcoming: upcomingCharges(
+        pocket,
+        subscriptions,
+        todayISO,
+        addDays(nextRefillDate, 1),
+        paidCharges,
+      ),
       expectedBalanceBaseMinor: toBaseMinor(
         balance.expectedBalanceMinor,
         currencyOf(pocket.currencyCode),

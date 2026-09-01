@@ -85,6 +85,17 @@ describe("buildDashboard", () => {
     // are in; C (Sep 15) and the following month's B/A are not.
     const eur = board.pockets[0]!;
     expect(eur.upcoming.map((c) => c.date)).toEqual(["2026-08-30", "2026-09-01"]);
+    expect(eur.upcoming.every((c) => !c.paid)).toBe(true);
+  });
+
+  it("threads marked-paid charges into the balance and the upcoming list", () => {
+    const paid = new Map([[A.id, new Set(["2026-09-01"])]]);
+    const b = buildDashboard([eurPocket], [A, B, C], currencies, settings, "2026-08-15", paid);
+    const eur = b.pockets[0]!;
+    expect(eur.upcoming.find((c) => c.subscription.id === A.id)?.paid).toBe(true);
+    // A's imminent charge (Sep 1) is settled -> A contributes 0 -> pocket 130.00
+    expect(eur.balance.lines.find((l) => l.subscription.id === A.id)?.contributionMinor).toBe(0);
+    expect(eur.balance.expectedBalanceMinor).toBe(13000);
   });
 
   it("includes a charge that lands exactly on the refill day", () => {

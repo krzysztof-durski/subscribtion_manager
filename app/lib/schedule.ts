@@ -67,16 +67,17 @@ export function billingOccurrencesBetween(
 }
 
 /**
- * The most recent charge date on or before `dateISO`, or `null` if the
- * subscription has not had its first charge yet.
+ * The most recent charge date *strictly before* `dateISO`, or `null` if the
+ * subscription has not been charged yet. A charge dated exactly `dateISO` is
+ * treated as still upcoming — it may not have cleared today.
  */
-export function lastBillingOnOrBefore(sub: Subscription, dateISO: ISODate): ISODate | null {
-  if (compareISODate(dateISO, sub.firstBillingDate) < 0) return null;
+export function lastBillingBefore(sub: Subscription, dateISO: ISODate): ISODate | null {
+  if (compareISODate(dateISO, sub.firstBillingDate) <= 0) return null;
   const searchFrom = maxISODate(
     sub.firstBillingDate,
     addMonths(dateISO, -(sub.intervalMonths + 1)),
   );
-  const list = billingOccurrencesBetween(sub, searchFrom, addDays(dateISO, 1));
+  const list = billingOccurrencesBetween(sub, searchFrom, dateISO);
   return list.at(-1) ?? null;
 }
 
@@ -86,6 +87,17 @@ export function nextBillingAfter(sub: Subscription, dateISO: ISODate): ISODate |
   const list = billingOccurrencesBetween(
     sub,
     addDays(dateISO, 1),
+    addMonths(horizonBase, sub.intervalMonths + 2),
+  );
+  return list[0] ?? null;
+}
+
+/** The next charge date on or after `dateISO`, or `null` if none remain. */
+export function nextBillingOnOrAfter(sub: Subscription, dateISO: ISODate): ISODate | null {
+  const horizonBase = maxISODate(dateISO, sub.firstBillingDate);
+  const list = billingOccurrencesBetween(
+    sub,
+    dateISO,
     addMonths(horizonBase, sub.intervalMonths + 2),
   );
   return list[0] ?? null;

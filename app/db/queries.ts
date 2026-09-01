@@ -6,12 +6,15 @@
  * No business math lives here.
  */
 
-import { asc, eq } from "drizzle-orm";
+import { and, asc, eq } from "drizzle-orm";
 
 import type { Currency, Pocket, Settings, Subscription } from "~/lib/types";
 
 import type { Db } from "./client";
-import { currencies, pockets, settings, subscriptions } from "./schema";
+import { chargePayments, currencies, pockets, settings, subscriptions } from "./schema";
+
+/** For each subscription id, the set of scheduled charge dates marked settled. */
+export type PaidChargeMap = Map<number, Set<string>>;
 
 type CurrencyRow = typeof currencies.$inferSelect;
 type PocketRow = typeof pockets.$inferSelect;
@@ -80,26 +83,40 @@ export async function getSettings(db: Db): Promise<Settings> {
   return toSettings(row);
 }
 
+export async function getChargePayments(db: Db): Promise<PaidChargeMap> {
+  const rows = await db.select().from(chargePayments);
+  const map: PaidChargeMap = new Map();
+  for (const row of rows) {
+    const set = map.get(row.subscriptionId) ?? new Set<string>();
+    set.add(row.dueDate);
+    map.set(row.subscriptionId, set);
+  }
+  return map;
+}
+
 export interface AppData {
   currencies: Currency[];
   pockets: Pocket[];
   subscriptions: Subscription[];
   settings: Settings;
+  paidCharges: PaidChargeMap;
 }
 
 /** One round of reads for the dashboard and most other pages. */
 export async function getAppData(db: Db): Promise<AppData> {
-  const [currencyList, pocketList, subscriptionList, settingsRow] = await Promise.all([
+  const [currencyList, pocketList, subscriptionList, settingsRow, paidCharges] = await Promise.all([
     getCurrencies(db),
     getPockets(db),
     getSubscriptions(db),
     getSettings(db),
+    getChargePayments(db),
   ]);
   return {
     currencies: currencyList,
     pockets: pocketList,
     subscriptions: subscriptionList,
     settings: settingsRow,
+    paidCharges,
   };
 }
 
@@ -166,6 +183,28 @@ export async function updateSubscription(
 
 export async function deleteSubscription(db: Db, id: number): Promise<void> {
   await db.delete(subscriptions).where(eq(subscriptions.id, id));
+}
+
+/** Mark one scheduled charge as settled. No-op if already marked. */
+export async function markChargePaid(
+  db: Db,
+  subscriptionId: number,
+  dueDate: string,
+): Promise<void> {
+  await db.insert(chargePayments).values({ subscriptionId, dueDate }).onConflictDoNothing();
+}
+
+/** Undo {@link markChargePaid}. */
+export async function unmarkChargePaid(
+  db: Db,
+  subscriptionId: number,
+  dueDate: string,
+): Promise<void> {
+  await db
+    .delete(chargePayments)
+    .where(
+      and(eq(chargePayments.subscriptionId, subscriptionId), eq(chargePayments.dueDate, dueDate)),
+    );
 }
 
 export interface SettingsInput {

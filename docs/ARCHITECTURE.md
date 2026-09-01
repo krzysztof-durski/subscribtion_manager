@@ -38,7 +38,7 @@ The dependency arrow only points downward. `app/lib` never imports from
 `app/db` or `react-router`, which is what lets it be unit-tested in plain Node
 at 100% coverage.
 
-## Data model (4 tables)
+## Data model (5 tables)
 
 - **currencies** — `code` PK, `rate_to_base` (base-currency units per 1 unit;
   the base row is 1), `is_base`. Rates are entered by hand on the Settings page;
@@ -51,6 +51,9 @@ at 100% coverage.
   currency is the pocket's currency.
 - **settings** — single row (`id = 1`): base currency, default refill day,
   timezone, monthly income and food (base-currency minor units).
+- **charge_payments** — `(subscription_id, due_date)` rows for charges the user
+  manually marked settled (`ON DELETE CASCADE` from subscriptions). Overrides the
+  date-based "has this charge happened?" guess. See `docs/POCKET-MODEL.md`.
 
 Money is always integer minor units. Dates are `YYYY-MM-DD` text and sorted as
 strings. "Today" is resolved once per request from `settings.timezone`.
@@ -66,13 +69,13 @@ Keep them in sync when either changes. Apply with
 
 ## Routes
 
-| Path             | Purpose                                                                                                                                                      |
-| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `/`              | Dashboard: per-pocket expected balance, monthly refill, next refill date, the charges due before that refill, PLN grand total. `?today=` overrides the date. |
-| `/subscriptions` | List + create / edit / delete.                                                                                                                               |
-| `/pockets`       | List + create / edit / delete (blocked while subscriptions reference it).                                                                                    |
-| `/settings`      | Default refill day, timezone, income, food; currency list + exchange rates.                                                                                  |
-| `/savings`       | `income − subscriptions(PLN) − food`, with a per-subscription breakdown. Also edits income/food.                                                             |
+| Path             | Purpose                                                                                                                                                                                       |
+| ---------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `/`              | Dashboard: per-pocket expected balance, monthly refill, next refill date, the charges due before that refill (each with a "mark paid" toggle), PLN grand total. `?today=` overrides the date. |
+| `/subscriptions` | List + create / edit / delete.                                                                                                                                                                |
+| `/pockets`       | List + create / edit / delete (blocked while subscriptions reference it).                                                                                                                     |
+| `/settings`      | Default refill day, timezone, income, food; currency list + exchange rates.                                                                                                                   |
+| `/savings`       | `income − subscriptions(PLN) − food`, with a per-subscription breakdown. Also edits income/food.                                                                                              |
 
 ## Tests
 
